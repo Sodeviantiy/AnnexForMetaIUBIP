@@ -1,4 +1,4 @@
-п»їusing UnityEngine;
+ГЇВ»Вїusing UnityEngine;
 using Michsky.UI.Heat;
 
 public class SettingsManager : MonoBehaviour
@@ -39,7 +39,7 @@ public class SettingsManager : MonoBehaviour
 
     void LeaveTest()
     {
-        if (!menuManager.isMenuOpen()) // Проверяем, открыто ли меню
+        if (!menuManager.isMenuOpen()) // ГЏГ°Г®ГўГҐГ°ГїГҐГ¬, Г®ГІГЄГ°Г»ГІГ® Г«ГЁ Г¬ГҐГ­Гѕ
             colorButtons.StandartColor();
     }
 }
