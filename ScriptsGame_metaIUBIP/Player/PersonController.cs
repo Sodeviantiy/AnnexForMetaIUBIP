@@ -1,0 +1,157 @@
+п»їusing UnityEngine;
+using Photon.Pun;
+using System.Collections.Generic;
+
+public class PersonController : MonoBehaviourPun
+{
+    // Перенесенные переменные из PlayerController
+    [Header("Animation Settings")]
+    [SerializeField] private float walkAnimationThreshold = 0.1f; // Порог для анимации ходьбы
+    [SerializeField] private float runAnimationThreshold = 5f;    // Порог для анимации бега
+    [SerializeField] private float rotationSpeed = 10f;           // Скорость поворота
+
+    // Оригинальные переменные из FirstPersonMovement
+    [Header("Movement Settings")]
+    public float speed = 5;         // Базовая скорость (теперь используется как walk speed)
+    public float runSpeed = 9;      // Скорость бега
+    public bool canRun = true;
+    public KeyCode runningKey = KeyCode.LeftShift;
+    public List<System.Func<float>> speedOverrides = new List<System.Func<float>>();
+
+    // Компоненты
+    private Animator _animator;
+    private Rigidbody _rigidbody;
+    private PhotonView _photonView;
+    private Vector3 _movement;
+    private ChatSettings _chatSettings;
+
+    public bool IsRunning { get; private set; }
+    public bool cursorActive { get; private set; }
+
+    public bool ignoreAltUntilReleased = false;
+
+
+    // Добавляем публичное свойство для проверки блокировки управления
+    public bool IsControlLocked
+    {
+        get
+        {
+            // Управление заблокировано, если курсор активен или чат в фокусе
+            return cursorActive || (_chatSettings != null && _chatSettings.IsChatFocused);
+        }
+    }
+
+    void Awake()
+    {
+        _rigidbody = GetComponent<Rigidbody>();
+        _photonView = GetComponent<PhotonView>();
+        _animator = GetComponent<Animator>();
+
+        // Находим компонент ChatSettings в сцене
+        _chatSettings = FindObjectOfType<ChatSettings>();
+    }
+
+    void Update()
+    {
+        if (!_photonView.IsMine) return;
+
+        // 1) Проверяем фокус чата
+        bool chatFocused = _chatSettings != null && _chatSettings.IsChatFocused;
+
+        // 2) Если чат в фокусе, форсируем курсор разблокированным и игнорируем Alt
+        if (chatFocused)
+        {
+            Cursor.lockState = CursorLockMode.None;
+            Cursor.visible = true;
+            cursorActive = true;
+
+            // Останавливаем движение и вращение, раз чат в фокусе
+            return;
+        }
+        else
+        {
+            // 3) Если чат не в фокусе — обрабатываем Alt как обычно
+            if (Input.GetKey(KeyCode.LeftAlt))
+            {
+                Cursor.lockState = CursorLockMode.None;
+                Cursor.visible = true;
+                cursorActive = true;
+            }
+            if (Input.GetKeyUp(KeyCode.LeftAlt))
+            {
+                Cursor.lockState = CursorLockMode.Locked;
+                Cursor.visible = false;
+                cursorActive = false;
+            }
+        }
+
+        // Проверяем, заблокировано ли управление
+        if (IsControlLocked)
+        {
+            // Если управление заблокировано, устанавливаем нулевое движение
+            _movement = Vector3.zero;
+        }
+        else
+        {
+            // Обработка ввода только если управление не заблокировано
+            float horizontal = Input.GetAxis("Horizontal");
+            float vertical = Input.GetAxis("Vertical");
+            _movement = new Vector3(horizontal, 0, vertical).normalized;
+
+            // Определение состояния бега
+            IsRunning = canRun && Input.GetKey(runningKey);
+        }
+
+        // Расчет скорости для анимаций
+        float currentSpeed = _movement.magnitude * (IsRunning ? runSpeed : speed);
+
+        // Отладочный вывод
+        Debug.Log($"Animation Speed: {currentSpeed} | IsRunning: {IsRunning} | ControlLocked: {IsControlLocked}");
+
+        // Обновление параметра аниматора
+        if (_animator != null)
+        {
+            _animator.SetFloat("Speed", currentSpeed);
+        }
+
+        // Поворот персонажа только если управление не заблокировано
+        if (_movement != Vector3.zero && !IsControlLocked)
+        {
+            Quaternion targetRotation = Quaternion.LookRotation(_movement);
+            transform.rotation = Quaternion.Slerp(
+                transform.rotation,
+                targetRotation,
+                rotationSpeed * Time.deltaTime
+            );
+        }
+    }
+
+    void FixedUpdate()
+    {
+        if (!_photonView.IsMine) return;
+
+        // Проверяем, заблокировано ли управление
+        if (IsControlLocked)
+        {
+            // Если управление заблокировано, останавливаем движение
+            _rigidbody.linearVelocity = new Vector3(0, _rigidbody.linearVelocity.y, 0);
+            return;
+        }
+
+        // Оригинальная логика движения
+        float targetMovingSpeed = IsRunning ? runSpeed : speed;
+
+        if (speedOverrides.Count > 0)
+        {
+            targetMovingSpeed = speedOverrides[speedOverrides.Count - 1]();
+        }
+
+        Vector2 targetVelocity = new Vector2(
+            Input.GetAxis("Horizontal") * targetMovingSpeed,
+            Input.GetAxis("Vertical") * targetMovingSpeed
+        );
+
+        _rigidbody.linearVelocity = transform.rotation *
+            new Vector3(targetVelocity.x, _rigidbody.linearVelocity.y, targetVelocity.y);
+    }
+}
